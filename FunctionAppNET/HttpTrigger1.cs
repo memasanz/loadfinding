@@ -110,9 +110,9 @@ namespace My.Functions
                     string recordId = body.Values.First().RecordId;
                     
 
-                    var data = GetLoads(body);
+                    List<String>  result = await GetLoads(body);
 
-                    List<String> result = ["L123456", "L123456", "L123456"];  
+                    //List<String> result = ["L123456", "L123456", "L123456"];  
 
                      var output = new OutputList  
                     {  
@@ -158,63 +158,105 @@ namespace My.Functions
         {
                 return Environment.GetEnvironmentVariable(key) ?? throw new InvalidOperationException($"Environment variable '{key}' not found.");
         }
-        public async Task<string> GetLoads(RequestNamespace.Root body)  
+    public async Task<List<string>> GetLoads(RequestNamespace.Root body)  
+    {  
+        try  
         {  
-            var data =  body.Values.First().Data.Text.FirstOrDefault();
-            var content = data?.Content;
-            _logger.LogInformation($"Content: {content}");
-
-            // Create the clients
-            string endpoint = GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
-
-           
-            string key = GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
-
-            var openAIClient = new AzureOpenAIClient(new Uri(endpoint), new ApiKeyCredential(key));
-            var client = openAIClient.GetChatClient("gpt-4o");
-
-            // Create a chat with initial prompts
-            var chat = new List<ChatMessage>
-            {
-                new SystemChatMessage("Objective: Extract unique load identifier from bills of lading and compile them into a distinct, structured list. A 'load' refers to the specific cargo or shipment. The output should exclude duplicates and irrelevant information. example of loads would be: L12345"),
-                new UserChatMessage(content)
-            };
-
-            // Get the schema of the class for the structured response
-            JSchemaGenerator generator = new JSchemaGenerator();
-            var jsonSchema = generator.Generate(typeof(OpenAIResponseLoads)).ToString();
-
-            // Get a completion with structured output
-            var chatUpdates = await client.CompleteChatAsync(
-                chat,
-                new ChatCompletionOptions
-                {
-                    ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                        "openAIResponseLoads",
-                        BinaryData.FromString(jsonSchema))
-                });
-
-            // Deserialize the response to the defined class
-            var responseContent = chatUpdates.GetRawResponse().Content.ToString();
-            _logger.LogInformation($"Response content: {responseContent}");
-            var responseObject = JsonConvert.DeserializeObject<OpenAIResponseLoads>(responseContent);
-            _logger.LogInformation($"Response object: {responseObject}");
-            if (responseObject?.Loads != null)
-            {
-                _logger.LogInformation($"Response object loads: {string.Join(", ", responseObject.Loads)}");
-            }
-            else
-            {
-                _logger.LogInformation("Response object loads is null or empty.");
-            }
-
-
-            // Return a default or meaningful string value
-            return "Loads processed successfully.";
-        }
+            // Step 1: Validate the input body  
+            if (body?.Values == null || !body.Values.Any())  
+            {  
+                _logger.LogError("Input body is null or 'Values' array is empty.");  
+                throw new ArgumentException("Invalid input body: 'Values' array is required.");  
+            }  
+    
+            var data = body.Values.First().Data?.Text?.FirstOrDefault();  
+            var content = data?.Content;  
+    
+            if (string.IsNullOrEmpty(content))  
+            {  
+                _logger.LogError("Content is null or empty.");  
+                throw new ArgumentException("Content is required and cannot be null or empty.");  
+            }  
+    
+            _logger.LogInformation($"Content: {content}");  
+    
+            // Step 2: Retrieve environment variables  
+            string endpoint = GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");  
+            if (string.IsNullOrEmpty(endpoint))  
+            {  
+                _logger.LogError("AZURE_OPENAI_ENDPOINT environment variable is missing or empty.");  
+                throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT environment variable is required.");  
+            }  
+    
+            _logger.LogInformation($"Endpoint: {endpoint}");  
+    
+            string key = GetEnvironmentVariable("AZURE_OPENAI_API_KEY");  
+            if (string.IsNullOrEmpty(key))  
+            {  
+                _logger.LogError("AZURE_OPENAI_API_KEY environment variable is missing or empty.");  
+                throw new InvalidOperationException("AZURE_OPENAI_API_KEY environment variable is required.");  
+            }  
+    
+            _logger.LogInformation("Retrieved API key.");  
+    
+            // Step 3: Create the OpenAI client  
+            var openAIClient = new AzureOpenAIClient(new Uri(endpoint), new ApiKeyCredential(key));  
+            _logger.LogInformation("Created OpenAI client.");  
+    
+            var client = openAIClient.GetChatClient("gpt-4o");  
+            _logger.LogInformation("Created Chat client.");  
+    
+            // Step 4: Prepare chat messages  
+            var chat = new List<ChatMessage>  
+            {  
+                new SystemChatMessage("Objective: Extract unique load identifier from bills of lading and compile them into a distinct, structured list. A 'load' refers to the specific cargo or shipment. The output should exclude duplicates and irrelevant information. example of loads would be: L12345"),  
+                new UserChatMessage(content)  
+            };  
+    
+            // Step 5: Generate JSON schema for structured response  
+            JSchemaGenerator generator = new JSchemaGenerator();  
+            var jsonSchema = generator.Generate(typeof(OpenAIResponseLoads)).ToString();  
+    
+            _logger.LogInformation("Generated JSON schema.");  
+    
+            // Step 6: Call OpenAI API  
+            var chatUpdates = await client.CompleteChatAsync(  
+                chat,  
+                new ChatCompletionOptions  
+                {  
+                    ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(  
+                        "openAIResponseLoads",  
+                        BinaryData.FromString(jsonSchema))  
+                });  
+    
+            _logger.LogInformation("Received response from OpenAI API.");  
+    
+            // Step 7: Deserialize the response  
+            var responseContent = chatUpdates.Value.Content[0].Text;  
+            _logger.LogInformation($"Response content: {responseContent}");  
+    
+            var responseObject = JsonConvert.DeserializeObject<OpenAIResponseLoads>(responseContent);  
+            _logger.LogInformation($"Deserialized response object: {responseObject}");  
+    
+            if (responseObject?.Loads != null && responseObject.Loads.Any())  
+            {  
+                _logger.LogInformation($"Loads: {string.Join(", ", responseObject.Loads)}");  
+                return responseObject.Loads;  
+            }  
+            else  
+            {  
+                _logger.LogWarning("Response object loads are null or empty.");  
+                return new List<string>();  
+            }  
+        }  
+        catch (Exception ex)  
+        {  
+            // Log the exception and return a default empty list  
+            _logger.LogError(ex, $"An error occurred while processing the GetLoads request: {ex.Message}");  
+            return new List<string>();  
+        }  
+    }  
         
-
-       
 
  
     }
