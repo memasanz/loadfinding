@@ -1,4 +1,4 @@
-## CHR Hack
+## AI Search Customization Hack
 
 - Required Region: East US, West US2, West Europe, North Central US
 
