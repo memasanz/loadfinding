@@ -109,6 +109,7 @@ namespace My.Functions
                 {  
                     string recordId = body.Values.First().RecordId;
                     
+
                     var data = GetLoads(body);
 
                     List<String> result = ["L123456", "L123456", "L123456"];  
@@ -175,8 +176,8 @@ namespace My.Functions
             // Create a chat with initial prompts
             var chat = new List<ChatMessage>
             {
-                new SystemChatMessage("Extract the event information and projected weather."),
-                new UserChatMessage("Alice and Bob are going to a science fair in Seattle on June 1st, 2025.")
+                new SystemChatMessage("Objective: Extract unique load identifier from bills of lading and compile them into a distinct, structured list. A 'load' refers to the specific cargo or shipment. The output should exclude duplicates and irrelevant information. example of loads would be: L12345"),
+                new UserChatMessage(content)
             };
 
             // Get the schema of the class for the structured response
